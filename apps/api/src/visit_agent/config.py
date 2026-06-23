@@ -86,5 +86,11 @@ class Settings:
         "REQUIRE_FIRST_CONTACT_APPROVAL", "true"
     ).lower() in {"1", "true", "yes", "on"}
 
+    def __post_init__(self) -> None:
+        railway_port = os.getenv("PORT", "")
+        if railway_port:
+            object.__setattr__(self, "api_host", "0.0.0.0")
+            object.__setattr__(self, "api_port", int(railway_port))
+
 
 settings = Settings()
