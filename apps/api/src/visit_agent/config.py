@@ -84,5 +84,12 @@ class Settings:
         "REQUIRE_FIRST_CONTACT_APPROVAL", "true"
     ).lower() in {"1", "true", "yes", "on"}
 
+    def __post_init__(self) -> None:
+        # Railway demo-safe override
+        if self.app_env.lower() == "demo":
+            object.__setattr__(self, "database_url", "")
+            object.__setattr__(self, "api_host", "0.0.0.0")
+            object.__setattr__(self, "api_port", int(os.getenv("PORT", "8000")))
+
 
 settings = Settings()
