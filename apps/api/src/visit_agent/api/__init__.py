@@ -11,4 +11,4 @@ from visit_agent.infrastructure.db.ordered_sqlalchemy_repository import (
     OrderedSQLAlchemyRepository,
 )
 
-_repository_module.SQLAlchemyRepository = OrderedSQLAlchemyRepository
+_repository_module.SQLAlchemyRepository = OrderedSQLAlchemyRepository  # type: ignore[assignment]
