@@ -1,4 +1,5 @@
 import asyncio
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
@@ -13,7 +14,14 @@ from visit_agent.api.feishu_events import (
 )
 from visit_agent.core.llm import FallbackLLM
 from visit_agent.tools.builtin.calculator import CalculatorTool
+from visit_agent.tools.builtin.agentic_rl import AgenticRLTool
+from visit_agent.tools.builtin.communication import CommunicationProtocolTool
+from visit_agent.tools.builtin.context_engineering import ContextEngineeringTool
+from visit_agent.tools.builtin.memory import MemoryTool
+from visit_agent.tools.builtin.rag import RAGTool
+from visit_agent.tools.builtin.storage import StorageTool
 from visit_agent.tools.registry import ToolRegistry
+from visit_agent.tools.store import AgentSQLiteStore
 from visit_agent.infrastructure.db.repository import InMemoryRepository, seed_demo
 
 
@@ -76,6 +84,50 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual([call.name for call in response.tool_calls], ["calculator"])
         self.assertIn("calculator", response.content)
         self.assertIn("7", response.content)
+
+    def test_advanced_tools_are_installed_on_runtime(self) -> None:
+        runtime = AgentRuntime(
+            VisitCoordinatorAgent(seed_demo(InMemoryRepository())),
+            llm=FallbackLLM(),
+        )
+
+        names = {tool.name for tool in runtime.tools.list()}
+
+        self.assertTrue(
+            {
+                "memory",
+                "rag",
+                "storage",
+                "context_engineering",
+                "communication_protocol",
+                "agentic_rl",
+            }.issubset(names)
+        )
+
+    def test_advanced_tools_persist_and_retrieve_context(self) -> None:
+        with TemporaryDirectory() as tmp:
+            store = AgentSQLiteStore(f"{tmp}/agent.sqlite3")
+            storage = StorageTool(store)
+            memory = MemoryTool(store)
+            rag = RAGTool(store)
+            context = ContextEngineeringTool(store)
+            protocol = CommunicationProtocolTool()
+            rl = AgenticRLTool(store)
+
+            self.assertTrue(
+                storage.run(
+                    {"operation": "set", "namespace": "test", "key": "model", "value": "deepseek"}
+                ).ok
+            )
+            self.assertIn("deepseek", storage.run({"namespace": "test", "key": "model"}).output)
+            self.assertTrue(memory.run({"operation": "remember", "text": "用户偏好上午拜访"}).ok)
+            self.assertTrue(rag.run({"operation": "ingest", "text": "青岛桃花源酒店适合商务会面"}).ok)
+            self.assertIn("上午拜访", memory.run({"query": "上午拜访"}).output)
+            self.assertIn("青岛桃花源", rag.run({"query": "青岛酒店"}).output)
+            self.assertIn("当前任务", context.run({"query": "安排上午拜访青岛酒店"}).output)
+            self.assertTrue(protocol.run({"protocol": "mcp", "payload": {"task": "calendar"}}).ok)
+            self.assertTrue(rl.run({"operation": "record", "task": "chat", "signal": 1}).ok)
+            self.assertIn("平均信号", rl.run({"operation": "summary"}).output)
 
 
 class FeishuAgentEventTests(unittest.TestCase):

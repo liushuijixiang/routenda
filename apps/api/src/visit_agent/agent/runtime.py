@@ -15,9 +15,16 @@ from visit_agent.infrastructure.adapters.feishu import (
     format_calendar_summary,
 )
 from visit_agent.tools.base import BaseTool, ToolContext, ToolResult
+from visit_agent.tools.builtin.agentic_rl import AgenticRLTool
 from visit_agent.tools.builtin.calculator import CalculatorTool
+from visit_agent.tools.builtin.communication import CommunicationProtocolTool
+from visit_agent.tools.builtin.context_engineering import ContextEngineeringTool
+from visit_agent.tools.builtin.memory import MemoryTool
+from visit_agent.tools.builtin.rag import RAGTool
 from visit_agent.tools.builtin.search import SearchTool
+from visit_agent.tools.builtin.storage import StorageTool
 from visit_agent.tools.registry import ToolRegistry
+from visit_agent.tools.store import AgentSQLiteStore
 
 
 @dataclass(frozen=True)
@@ -47,12 +54,14 @@ class AgentRuntime:
         feishu_base_url: str = "https://open.feishu.cn/open-apis",
         feishu_calendar_id: str = "primary",
         llm: LLM | None = None,
+        storage_path: str | None = None,
     ) -> None:
         self.coordinator = coordinator
         self.feishu_app_id = feishu_app_id
         self.feishu_app_secret = feishu_app_secret
         self.feishu_base_url = feishu_base_url
         self.feishu_calendar_id = feishu_calendar_id
+        self.store = AgentSQLiteStore(storage_path or settings.agent_storage_path)
         self.tools = self._build_tools()
         self.agent = ReactAgent(
             llm or self._default_llm(),
@@ -90,6 +99,12 @@ class AgentRuntime:
         registry = ToolRegistry()
         registry.register(CalculatorTool())
         registry.register(SearchTool(self.coordinator.search))
+        registry.register(StorageTool(self.store))
+        registry.register(MemoryTool(self.store))
+        registry.register(RAGTool(self.store))
+        registry.register(ContextEngineeringTool(self.store))
+        registry.register(CommunicationProtocolTool())
+        registry.register(AgenticRLTool(self.store))
         registry.register(ExtractVisitRequirementTool(self.coordinator))
         registry.register(SearchSuppliersTool(self.coordinator))
         registry.register(GenerateItineraryPlanTool(self.coordinator))
@@ -102,6 +117,19 @@ class AgentRuntime:
             )
         )
         return registry
+
+    def remember_interaction(self, conversation_id: str, user_text: str, assistant_text: str) -> None:
+        text = (
+            f"用户：{user_text.strip()}\n"
+            f"助手：{assistant_text.strip()[:500]}"
+        ).strip()
+        if text:
+            self.store.add_memory(
+                text,
+                scope=conversation_id or "global",
+                importance=0.35,
+                metadata={"source": "feishu_chat"},
+            )
 
     @staticmethod
     def _default_llm() -> LLM:

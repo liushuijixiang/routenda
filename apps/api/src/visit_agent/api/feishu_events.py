@@ -204,6 +204,7 @@ class FeishuAgentEventHandler:
         history = self._conversation(message.chat_id, message.text)
         turn = run_async(self.runtime.run_messages(history))
         self._remember(message.chat_id, message.text, turn.reply)
+        self.runtime.remember_interaction(message.chat_id, message.text, turn.reply)
         logger.info(
             "agent_reply_ready message_id=%s tool_calls=%s reply_preview=%s",
             message.message_id,

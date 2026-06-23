@@ -81,6 +81,22 @@ class ReactAgent(Agent):
             keyword in text for keyword in ("搜索", "查一下", "资料", "新闻", "官网", "背景")
         ):
             requests.append(ToolRequest("search", {"query": text}))
+        if "memory" in names and any(keyword in text for keyword in ("记住", "记一下", "记忆")):
+            requests.append(ToolRequest("memory", {"operation": "remember", "text": text}))
+        if "rag" in names and any(keyword in text for keyword in ("知识库", "资料库", "RAG", "rag")):
+            requests.append(ToolRequest("rag", {"operation": "search", "query": text}))
+        if "context_engineering" in names and any(
+            keyword in text for keyword in ("上下文", "context", "连续对话")
+        ):
+            requests.append(ToolRequest("context_engineering", {"query": text}))
+        if "communication_protocol" in names and any(
+            keyword in text for keyword in ("MCP", "A2A", "ANP", "协议", "通讯")
+        ):
+            requests.append(ToolRequest("communication_protocol", {"payload": {"text": text}}))
+        if "agentic_rl" in names and any(
+            keyword in text for keyword in ("反馈", "奖励", "reward", "RL", "rl")
+        ):
+            requests.append(ToolRequest("agentic_rl", {"operation": "summary"}))
         if "generate_itinerary_plan" in names and any(
             keyword in text for keyword in ("行程", "路线", "规划", "安排")
         ):

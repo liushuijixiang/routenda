@@ -82,6 +82,7 @@ class Settings:
     reminder_timezone: str = os.getenv("REMINDER_TIMEZONE", "Asia/Shanghai")
     outbox_poll_seconds: float = float(os.getenv("OUTBOX_POLL_SECONDS", "2"))
     outbox_batch_size: int = int(os.getenv("OUTBOX_BATCH_SIZE", "20"))
+    agent_storage_path: str = os.getenv("AGENT_STORAGE_PATH", "data/agent_tools.sqlite3")
     require_first_contact_approval: bool = os.getenv(
         "REQUIRE_FIRST_CONTACT_APPROVAL", "true"
     ).lower() in {"1", "true", "yes", "on"}
