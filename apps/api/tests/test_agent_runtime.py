@@ -4,17 +4,25 @@ import unittest
 
 from visit_agent.agent.agent import VisitCoordinatorAgent
 from visit_agent.agent.runtime import AgentRuntime
+from visit_agent.agents.react_agent import ReactAgent
+from visit_agent.agents.simple_agent import SimpleAgent
 from visit_agent.api.feishu_events import (
     FeishuAgentEventHandler,
     FeishuEventQueue,
     parse_feishu_message,
 )
+from visit_agent.core.llm import FallbackLLM
+from visit_agent.tools.builtin.calculator import CalculatorTool
+from visit_agent.tools.registry import ToolRegistry
 from visit_agent.infrastructure.db.repository import InMemoryRepository, seed_demo
 
 
 class AgentRuntimeTests(unittest.TestCase):
     def test_visit_message_calls_requirement_supplier_and_plan_tools(self) -> None:
-        runtime = AgentRuntime(VisitCoordinatorAgent(seed_demo(InMemoryRepository())))
+        runtime = AgentRuntime(
+            VisitCoordinatorAgent(seed_demo(InMemoryRepository())),
+            llm=FallbackLLM(),
+        )
 
         turn = asyncio.run(
             runtime.run("下周去苏州安科做质量沟通，王经理参加，周四前回上海，帮我规划行程")
@@ -28,13 +36,35 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertIn("search_suppliers", turn.reply)
 
     def test_calendar_message_calls_calendar_tool(self) -> None:
-        runtime = AgentRuntime(VisitCoordinatorAgent(seed_demo(InMemoryRepository())))
+        runtime = AgentRuntime(
+            VisitCoordinatorAgent(seed_demo(InMemoryRepository())),
+            llm=FallbackLLM(),
+        )
 
         turn = asyncio.run(runtime.run("看看今天日历和日程"))
 
         tool_names = [call.name for call in turn.tool_calls]
         self.assertEqual(tool_names, ["extract_visit_requirement", "feishu_calendar"])
         self.assertIn("飞书凭据未配置", turn.reply)
+
+    def test_simple_agent_handles_plain_chat(self) -> None:
+        agent = SimpleAgent(FallbackLLM())
+
+        response = asyncio.run(agent.run("你好"))
+
+        self.assertIn("Routenda Agent", response.content)
+        self.assertEqual(response.tool_calls, [])
+
+    def test_react_agent_can_call_builtin_tool(self) -> None:
+        registry = ToolRegistry()
+        registry.register(CalculatorTool())
+        agent = ReactAgent(FallbackLLM(), registry)
+
+        response = asyncio.run(agent.run("1 + 2 * 3"))
+
+        self.assertEqual([call.name for call in response.tool_calls], ["calculator"])
+        self.assertIn("calculator", response.content)
+        self.assertIn("7", response.content)
 
 
 class FeishuAgentEventTests(unittest.TestCase):
@@ -49,7 +79,10 @@ class FeishuAgentEventTests(unittest.TestCase):
         self.assertEqual(message.text, "hello")
 
     def test_handler_filters_duplicates_and_bot_messages(self) -> None:
-        runtime = AgentRuntime(VisitCoordinatorAgent(seed_demo(InMemoryRepository())))
+        runtime = AgentRuntime(
+            VisitCoordinatorAgent(seed_demo(InMemoryRepository())),
+            llm=FallbackLLM(),
+        )
         sent: list[tuple[str, str]] = []
         handler = FeishuAgentEventHandler(runtime, send_text=lambda chat_id, text: sent.append((chat_id, text)))
 

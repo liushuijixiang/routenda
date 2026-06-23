@@ -4,10 +4,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from visit_agent.agent.agent import VisitCoordinatorAgent
+from visit_agent.agents.react_agent import ReactAgent
+from visit_agent.config import settings
+from visit_agent.core.config import AgentConfig
+from visit_agent.core.llm import FallbackLLM, LLM, OpenAICompatibleLLM, ResilientLLM
 from visit_agent.infrastructure.adapters.feishu import (
     FeishuOpenPlatformAdapter,
     format_calendar_summary,
 )
+from visit_agent.tools.base import BaseTool, ToolContext, ToolResult
+from visit_agent.tools.builtin.calculator import CalculatorTool
+from visit_agent.tools.builtin.search import SearchTool
+from visit_agent.tools.registry import ToolRegistry
 
 
 @dataclass(frozen=True)
@@ -26,7 +34,7 @@ class AgentTurn:
 
 
 class AgentRuntime:
-    """Conversation runtime that plans tool use and synthesizes user-facing replies."""
+    """Compatibility runtime backed by the core Agent framework."""
 
     def __init__(
         self,
@@ -36,57 +44,78 @@ class AgentRuntime:
         feishu_app_secret: str = "",
         feishu_base_url: str = "https://open.feishu.cn/open-apis",
         feishu_calendar_id: str = "primary",
+        llm: LLM | None = None,
     ) -> None:
         self.coordinator = coordinator
         self.feishu_app_id = feishu_app_id
         self.feishu_app_secret = feishu_app_secret
         self.feishu_base_url = feishu_base_url
         self.feishu_calendar_id = feishu_calendar_id
+        self.tools = self._build_tools()
+        self.agent = ReactAgent(
+            llm or self._default_llm(),
+            self.tools,
+            AgentConfig(),
+        )
 
     async def run(self, text: str) -> AgentTurn:
         if not text.strip():
             return AgentTurn(text=text, reply="我收到了消息，但暂时只能处理文本。")
+        response = await self.agent.run(text)
+        return AgentTurn(
+            text=text,
+            reply=response.content,
+            tool_calls=[
+                AgentToolCall(call.name, call.ok, call.output, call.raw)
+                for call in response.tool_calls
+            ],
+        )
 
-        planned = self._plan(text)
-        calls: list[AgentToolCall] = []
-        for tool_name in planned:
-            calls.append(await self._execute(tool_name, text))
-        return AgentTurn(text=text, tool_calls=calls, reply=self._synthesize(calls))
+    def _build_tools(self) -> ToolRegistry:
+        registry = ToolRegistry()
+        registry.register(CalculatorTool())
+        registry.register(SearchTool(self.coordinator.search))
+        registry.register(ExtractVisitRequirementTool(self.coordinator))
+        registry.register(SearchSuppliersTool(self.coordinator))
+        registry.register(GenerateItineraryPlanTool(self.coordinator))
+        registry.register(
+            FeishuCalendarTool(
+                app_id=self.feishu_app_id,
+                app_secret=self.feishu_app_secret,
+                base_url=self.feishu_base_url,
+                calendar_id=self.feishu_calendar_id,
+            )
+        )
+        return registry
 
-    def _plan(self, text: str) -> list[str]:
-        tools = ["extract_visit_requirement"]
-        lowered = text.lower()
-        if any(keyword in text for keyword in ("供应商", "厂", "客户", "安科", "恒曜", "电子")):
-            tools.append("search_suppliers")
-        if any(keyword in lowered for keyword in ("日历", "日程", "calendar", "空闲", "忙闲")):
-            tools.append("feishu_calendar")
-        if any(keyword in text for keyword in ("搜索", "查一下", "资料", "新闻", "官网", "背景")):
-            tools.append("web_search")
-        if any(keyword in text for keyword in ("行程", "路线", "规划", "安排")):
-            tools.append("generate_itinerary_plan")
-        return tools
+    @staticmethod
+    def _default_llm() -> LLM:
+        return ResilientLLM(
+            OpenAICompatibleLLM(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+                model=settings.openai_model,
+            ),
+            FallbackLLM(),
+        )
 
-    async def _execute(self, tool_name: str, text: str) -> AgentToolCall:
-        if tool_name == "extract_visit_requirement":
-            return self._extract_visit_requirement(text)
-        if tool_name == "search_suppliers":
-            return self._search_suppliers(text)
-        if tool_name == "feishu_calendar":
-            return await self._feishu_calendar()
-        if tool_name == "web_search":
-            return await self._web_search(text)
-        if tool_name == "generate_itinerary_plan":
-            return self._generate_itinerary_plan()
-        return AgentToolCall(tool_name, False, f"Unknown tool: {tool_name}")
 
-    def _extract_visit_requirement(self, text: str) -> AgentToolCall:
+class ExtractVisitRequirementTool(BaseTool):
+    name = "extract_visit_requirement"
+    description = "Extract structured business visit requirements from natural language."
+
+    def __init__(self, coordinator: VisitCoordinatorAgent) -> None:
+        self.coordinator = coordinator
+
+    def run(self, args: dict[str, Any], context: ToolContext | None = None) -> ToolResult:
+        text = str(args.get("text", "")).strip()
+        if not text:
+            return ToolResult.failure("missing_text", "缺少待抽取文本。")
         result = self.coordinator.intake(text)
         if not result.ok:
-            return AgentToolCall(
-                "extract_visit_requirement",
-                False,
-                result.message or result.error_code or "抽取失败",
-                result,
+            return ToolResult.failure(
+                result.error_code or "extract_failed",
+                result.message or "抽取失败",
             )
         draft = result.data.get("draft")
         missing = result.data.get("missing_slots", [])
@@ -99,14 +128,21 @@ class AgentRuntime:
             parts.append(f"时长={draft.duration_minutes}分钟")
         if missing:
             parts.append("待补充=" + "、".join(missing))
-        return AgentToolCall(
-            "extract_visit_requirement",
-            True,
+        return ToolResult.success(
             "；".join(parts) if parts else "这条消息不像完整拜访需求。",
             result.data,
         )
 
-    def _search_suppliers(self, text: str) -> AgentToolCall:
+
+class SearchSuppliersTool(BaseTool):
+    name = "search_suppliers"
+    description = "Search supplier and site records from ERP or local Excel sample data."
+
+    def __init__(self, coordinator: VisitCoordinatorAgent) -> None:
+        self.coordinator = coordinator
+
+    def run(self, args: dict[str, Any], context: ToolContext | None = None) -> ToolResult:
+        text = str(args.get("text", args.get("query", ""))).strip()
         suppliers = [
             supplier
             for supplier in self.coordinator.repo.suppliers.values()
@@ -118,11 +154,7 @@ class AgentRuntime:
             result = self.coordinator.tools.execute("search_suppliers", {"query": text[:80]})
             suppliers = list(result.data or []) if result.ok else []
         if not suppliers:
-            return AgentToolCall(
-                "search_suppliers",
-                True,
-                "没有在本地 ERP/Excel 样例数据里匹配到供应商。",
-            )
+            return ToolResult.success("没有在本地 ERP/Excel 样例数据里匹配到供应商。")
         lines: list[str] = []
         for supplier in suppliers[:3]:
             sites = [
@@ -135,88 +167,76 @@ class AgentRuntime:
                 for site in sites[:2]
             )
             lines.append(f"- {supplier.display_name} ({supplier.erp_id})：{site_text or '暂无厂区'}")
-        return AgentToolCall("search_suppliers", True, "\n".join(lines), suppliers)
+        return ToolResult.success("\n".join(lines), suppliers)
 
-    async def _feishu_calendar(self) -> AgentToolCall:
-        if not self.feishu_app_id or not self.feishu_app_secret:
-            return AgentToolCall("feishu_calendar", False, "飞书凭据未配置。")
+
+class FeishuCalendarTool(BaseTool):
+    name = "feishu_calendar"
+    description = "Read the configured Feishu calendar events."
+
+    def __init__(
+        self,
+        *,
+        app_id: str,
+        app_secret: str,
+        base_url: str,
+        calendar_id: str,
+    ) -> None:
+        self.app_id = app_id
+        self.app_secret = app_secret
+        self.base_url = base_url
+        self.calendar_id = calendar_id
+
+    async def arun(
+        self,
+        args: dict[str, Any],
+        context: ToolContext | None = None,
+    ) -> ToolResult:
+        if not self.app_id or not self.app_secret:
+            return ToolResult.failure("missing_credentials", "飞书凭据未配置。")
         feishu = FeishuOpenPlatformAdapter(
-            self.feishu_app_id,
-            self.feishu_app_secret,
-            base_url=self.feishu_base_url,
+            self.app_id,
+            self.app_secret,
+            base_url=self.base_url,
         )
         try:
-            events = await feishu.list_events(self.feishu_calendar_id)
+            events = await feishu.list_events(self.calendar_id)
             if events.ok:
-                return AgentToolCall(
-                    "feishu_calendar",
-                    True,
-                    format_calendar_summary(self.feishu_calendar_id, events.data),
+                return ToolResult.success(
+                    format_calendar_summary(self.calendar_id, events.data),
                     events.data,
                 )
-            return AgentToolCall(
-                "feishu_calendar",
-                False,
-                events.message or events.error_code or "飞书日历查询失败",
-                events,
+            return ToolResult.failure(
+                events.error_code or "feishu_calendar_failed",
+                events.message or "飞书日历查询失败",
             )
         finally:
             await feishu.aclose()
 
-    async def _web_search(self, text: str) -> AgentToolCall:
-        result = await self.coordinator.search.search(text)
-        if not result.ok:
-            return AgentToolCall("web_search", False, result.message or result.error_code or "搜索失败")
-        payload = result.data or {}
-        organic = payload.get("organic", []) if isinstance(payload, dict) else []
-        lines = []
-        for item in organic[:3]:
-            title = item.get("title", "未命名结果")
-            snippet = item.get("snippet", "")
-            link = item.get("link", "")
-            lines.append(f"- {title}\n  {snippet}\n  {link}".rstrip())
-        return AgentToolCall(
-            "web_search",
-            True,
-            "\n".join(lines) if lines else "搜索没有返回可用结果。",
-            payload,
-        )
 
-    def _generate_itinerary_plan(self) -> AgentToolCall:
+class GenerateItineraryPlanTool(BaseTool):
+    name = "generate_itinerary_plan"
+    description = "Generate an itinerary plan for active visit requirements."
+
+    def __init__(self, coordinator: VisitCoordinatorAgent) -> None:
+        self.coordinator = coordinator
+
+    def run(self, args: dict[str, Any], context: ToolContext | None = None) -> ToolResult:
         active = [
             requirement.id
             for requirement in self.coordinator.repo.requirements.values()
             if requirement.deleted_at is None
         ]
         if not active:
-            return AgentToolCall(
-                "generate_itinerary_plan",
-                True,
-                "当前还没有已确认的拜访需求可规划。",
-            )
+            return ToolResult.success("当前还没有已确认的拜访需求可规划。")
         result = self.coordinator.plan(active[:3])
         if not result.ok:
-            return AgentToolCall(
-                "generate_itinerary_plan",
-                False,
-                result.message or result.error_code or "规划失败",
-                result,
+            return ToolResult.failure(
+                result.error_code or "plan_failed",
+                result.message or "规划失败",
             )
         plan = result.data
-        return AgentToolCall(
-            "generate_itinerary_plan",
-            True,
+        return ToolResult.success(
             f"生成方案 {plan.id}，拜访段数 {len(plan.legs)}，未安排 {len(plan.unassigned)}。",
             plan,
         )
-
-    @staticmethod
-    def _synthesize(calls: list[AgentToolCall]) -> str:
-        lines = ["我是 Routenda Agent，已按消息内容规划并调用工具："]
-        for call in calls:
-            status = "OK" if call.ok else "ERROR"
-            lines.append(f"\n【{call.name} · {status}】\n{call.output}")
-        lines.append(
-            "\n下一步：如果这是新拜访需求，请补齐供应商、厂区、日期范围、拜访时长、参与人和出发/返回约束；我会继续生成可确认的需求草稿和行程方案。"
-        )
-        return "\n".join(lines)
