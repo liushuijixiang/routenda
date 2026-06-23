@@ -14,7 +14,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "cd ../api && API_HOST=127.0.0.1 API_PORT=8000 PYTHONPATH=src uv run python -m visit_agent.api.server",
+        "cd ../api && APP_ENV=test API_HOST=127.0.0.1 API_PORT=8000 OPENAI_API_KEY= LLM_API_KEY= CALENDAR_PROVIDER=mock FEISHU_APP_ID= FEISHU_APP_SECRET= ERP_PROVIDER=mock SEARCH_PROVIDER=disabled ROUTING_PROVIDER=mock GEOCODING_PROVIDER=mock PYTHONPATH=src uv run python -m visit_agent.api.server",
       url: "http://127.0.0.1:8000/api/v1/integrations/health",
       reuseExistingServer: true,
       timeout: 120_000,

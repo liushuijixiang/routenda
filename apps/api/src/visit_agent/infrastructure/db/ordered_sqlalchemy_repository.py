@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from visit_agent.domain.models import AuditEvent, DataQualityIssue
+from visit_agent.infrastructure.db import sqlalchemy_models as models
 from visit_agent.infrastructure.db import sqlalchemy_repository as legacy
 from visit_agent.infrastructure.db.repository import InMemoryRepository, seed_demo
 
@@ -34,7 +35,7 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
             event.listen(self.engine, "connect", enable_sqlite_foreign_keys)
 
         self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
-        legacy.Base.metadata.create_all(self.engine)
+        models.Base.metadata.create_all(self.engine)
         self.load()
 
         if seed_if_empty and not self.suppliers:
@@ -72,56 +73,56 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
             self._add_and_flush(
                 session,
                 (
-                    legacy.SupplierRow(**legacy.supplier_to_row(item))
+                    models.SupplierRow(**legacy.supplier_to_row(item))
                     for item in self.suppliers.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.SupplierSiteRow(**legacy.site_to_row(item))
+                    models.SupplierSiteRow(**legacy.site_to_row(item))
                     for item in self.sites.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.ContactRow(**legacy.contact_to_row(item))
+                    models.ContactRow(**legacy.contact_to_row(item))
                     for item in self.contacts.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.ContactAssignmentRow(**legacy.assignment_to_row(item))
+                    models.ContactAssignmentRow(**legacy.assignment_to_row(item))
                     for item in self.assignments
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.VisitRequirementRow(**legacy.requirement_to_row(item))
+                    models.VisitRequirementRow(**legacy.requirement_to_row(item))
                     for item in self.requirements.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.RequirementRevisionRow(**legacy.revision_to_row(item))
+                    models.RequirementRevisionRow(**legacy.revision_to_row(item))
                     for item in self.revisions
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.AgentSessionRow(session_id=session_id, state=state)
+                    models.AgentSessionRow(session_id=session_id, state=state)
                     for session_id, state in self.agent_sessions.items()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.IdempotencyRecordRow(
+                    models.IdempotencyRecordRow(
                         key=key,
                         response=jsonable_encoder(item["response"]),
                     )
@@ -131,53 +132,53 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
             self._add_and_flush(
                 session,
                 (
-                    legacy.AvailabilityWindowRow(**legacy.availability_to_row(item))
+                    models.AvailabilityWindowRow(**legacy.availability_to_row(item))
                     for item in self.availability
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.AvailabilityTokenRow(**legacy.token_to_row(item))
+                    models.AvailabilityTokenRow(**legacy.token_to_row(item))
                     for item in self.availability_tokens.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.ApprovalRequestRow(**legacy.approval_to_row(item))
+                    models.ApprovalRequestRow(**legacy.approval_to_row(item))
                     for item in self.approvals.values()
                 ),
             )
             self._add_and_flush(
                 session,
-                (legacy.AuditEventRow(**legacy.audit_to_row(item)) for item in self.audit),
+                (models.AuditEventRow(**legacy.audit_to_row(item)) for item in self.audit),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.OutboxJobRow(**legacy.outbox_to_row(item))
+                    models.OutboxJobRow(**legacy.outbox_to_row(item))
                     for item in self.outbox.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.HumanTaskRow(**legacy.human_task_to_row(item))
+                    models.HumanTaskRow(**legacy.human_task_to_row(item))
                     for item in self.human_tasks.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.ItineraryPlanRow(**legacy.plan_to_row(item))
+                    models.ItineraryPlanRow(**legacy.plan_to_row(item))
                     for item in self.plans.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.ItineraryLegRow(**legacy.leg_to_row(plan.id, leg))
+                    models.ItineraryLegRow(**legacy.leg_to_row(plan.id, leg))
                     for plan in self.plans.values()
                     for leg in plan.legs
                 ),
@@ -185,49 +186,49 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
             self._add_and_flush(
                 session,
                 (
-                    legacy.AppointmentRow(**legacy.appointment_to_row(item))
+                    models.AppointmentRow(**legacy.appointment_to_row(item))
                     for item in self.appointments.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.AppointmentVersionRow(**legacy.appointment_version_to_row(item))
+                    models.AppointmentVersionRow(**legacy.appointment_version_to_row(item))
                     for item in self.appointment_versions
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.CalendarBindingRow(**legacy.calendar_binding_to_row(item))
+                    models.CalendarBindingRow(**legacy.calendar_binding_to_row(item))
                     for item in self.calendar_bindings.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.CalendarConflictRow(**legacy.calendar_conflict_to_row(item))
+                    models.CalendarConflictRow(**legacy.calendar_conflict_to_row(item))
                     for item in self.calendar_conflicts.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.ConversationThreadRow(**legacy.conversation_to_row(item))
+                    models.ConversationThreadRow(**legacy.conversation_to_row(item))
                     for item in self.conversations.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.MessageRow(**legacy.message_to_row(item))
+                    models.MessageRow(**legacy.message_to_row(item))
                     for item in self.messages.values()
                 ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.MasterDataChangeRequestRow(
+                    models.MasterDataChangeRequestRow(
                         **legacy.master_data_change_to_row(item)
                     )
                     for item in self.master_data_changes.values()
@@ -236,7 +237,7 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
             self._add_and_flush(
                 session,
                 (
-                    legacy.DataQualityIssueRow(**legacy.data_quality_issue_to_row(item))
+                    models.DataQualityIssueRow(**legacy.data_quality_issue_to_row(item))
                     for item in self.data_quality_issues.values()
                 ),
             )

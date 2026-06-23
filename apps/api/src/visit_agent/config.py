@@ -53,6 +53,8 @@ class Settings:
     feishu_app_secret: str = os.getenv("FEISHU_APP_SECRET", "")
     feishu_base_url: str = os.getenv("FEISHU_BASE_URL", "https://open.feishu.cn/open-apis")
     feishu_calendar_id: str = os.getenv("FEISHU_CALENDAR_ID", "primary")
+    feishu_event_verification_token: str = os.getenv("FEISHU_EVENT_VERIFICATION_TOKEN", "")
+    feishu_event_encrypt_key: str = os.getenv("FEISHU_EVENT_ENCRYPT_KEY", "")
     microsoft_tenant_id: str = os.getenv("MICROSOFT_TENANT_ID", "")
     microsoft_client_id: str = os.getenv("MICROSOFT_CLIENT_ID", "")
     microsoft_client_secret: str = os.getenv("MICROSOFT_CLIENT_SECRET", "")

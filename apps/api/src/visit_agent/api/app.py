@@ -63,6 +63,11 @@ from visit_agent.domain.models import (
 from visit_agent.infrastructure.db.repository import InMemoryRepository, seed_demo
 from visit_agent.infrastructure.db.sqlalchemy_repository import SQLAlchemyRepository
 from visit_agent.infrastructure.adapters.communication import parse_inbound_reply
+from visit_agent.infrastructure.adapters.feishu import (
+    FeishuOpenPlatformAdapter,
+    extract_feishu_message_text,
+    format_calendar_summary,
+)
 
 
 def encode_data(value: Any) -> Any:
@@ -1268,6 +1273,114 @@ def create_app(repo: InMemoryRepository | None = None) -> FastAPI:
             )
         )
         return cast(dict[str, Any], remember_idempotent(repo, key, message))
+
+    @app.post("/api/v1/feishu/events")
+    async def feishu_events(payload: dict[str, Any]) -> dict[str, Any]:
+        challenge = payload.get("challenge")
+        if payload.get("type") == "url_verification" and challenge:
+            token = str(payload.get("token", ""))
+            if (
+                settings.feishu_event_verification_token
+                and token != settings.feishu_event_verification_token
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail={"code": "invalid_feishu_token", "message": "Feishu token mismatch"},
+                )
+            return {"challenge": challenge}
+
+        if "encrypt" in payload:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "feishu_encrypted_events_not_enabled",
+                    "message": "Configure Feishu to send unencrypted events or add decrypt support",
+                },
+            )
+
+        header = cast(dict[str, Any], payload.get("header") or {})
+        event_type = str(header.get("event_type") or payload.get("type") or "")
+        event = cast(dict[str, Any], payload.get("event") or {})
+        if event_type != "im.message.receive_v1":
+            return {"ok": True, "ignored": event_type or "unknown"}
+
+        text = extract_feishu_message_text(event)
+        message = cast(dict[str, Any], event.get("message") or {})
+        chat_id = str(message.get("chat_id") or "")
+        if not text:
+            reply = "我收到了消息，但暂时只能处理文本。"
+        elif any(keyword in text.lower() for keyword in ("日历", "日程", "calendar")):
+            feishu = FeishuOpenPlatformAdapter(
+                settings.feishu_app_id,
+                settings.feishu_app_secret,
+                base_url=settings.feishu_base_url,
+            )
+            events = await feishu.list_events(settings.feishu_calendar_id)
+            await feishu.aclose()
+            if events.ok:
+                reply = format_calendar_summary(settings.feishu_calendar_id, events.data)
+            else:
+                reply = f"飞书日历查询失败：{events.message or events.error_code}"
+        else:
+            intake = agent.intake(text)
+            if intake.ok:
+                missing = intake.data.get("missing_slots", [])
+                if missing:
+                    reply = "已收到拜访需求。还需要补充：" + "、".join(missing)
+                else:
+                    reply = "已解析拜访需求，可以在 Routenda 工作台继续确认。"
+            else:
+                reply = intake.message or "解析失败，请稍后重试。"
+
+        sent: dict[str, Any] | None = None
+        if chat_id and settings.feishu_app_id and settings.feishu_app_secret:
+            feishu = FeishuOpenPlatformAdapter(
+                settings.feishu_app_id,
+                settings.feishu_app_secret,
+                base_url=settings.feishu_base_url,
+            )
+            result = await feishu.send_text(chat_id, reply, receive_id_type="chat_id")
+            await feishu.aclose()
+            if not result.ok:
+                raise HTTPException(
+                    status_code=502,
+                    detail={"code": result.error_code, "message": result.message},
+                )
+            sent = cast(dict[str, Any], encode_data(result.data))
+
+        return {"ok": True, "event_type": event_type, "text": text, "reply": reply, "sent": sent}
+
+    @app.get("/api/v1/feishu/calendar")
+    async def feishu_calendar(x_role: str = Header(default="requester", alias="X-Role")) -> dict[str, Any]:
+        require_role(x_role, "coordinator")
+        if not settings.feishu_app_id or not settings.feishu_app_secret:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "missing_credentials", "message": "Feishu credentials are missing"},
+            )
+        feishu = FeishuOpenPlatformAdapter(
+            settings.feishu_app_id,
+            settings.feishu_app_secret,
+            base_url=settings.feishu_base_url,
+        )
+        calendars = await feishu.list_calendars()
+        events = await feishu.list_events(settings.feishu_calendar_id)
+        await feishu.aclose()
+        if not calendars.ok:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": calendars.error_code, "message": calendars.message},
+            )
+        if not events.ok:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": events.error_code, "message": events.message},
+            )
+        return {
+            "calendar_id": settings.feishu_calendar_id,
+            "calendars": encode_data(calendars.data),
+            "events": encode_data(events.data),
+        }
 
     @app.patch("/api/v1/messages/{message_id}/parsed-result")
     def correct_message_parse(
