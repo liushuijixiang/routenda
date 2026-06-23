@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VisitRequirementDraft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "supplier_id",
+    "site_id",
+    "date_start",
+    "date_end",
+    "duration_minutes",
+    "origin"
+  ],
+  "properties": {
+    "supplier_name": { "type": ["string", "null"], "title": "供应商名称" },
+    "supplier_id": { "type": "string", "title": "供应商" },
+    "site_id": { "type": "string", "title": "厂区" },
+    "purpose_category": { "type": "string", "title": "拜访目的" },
+    "date_start": {
+      "type": "string",
+      "format": "date-time",
+      "title": "开始日期"
+    },
+    "date_end": {
+      "type": "string",
+      "format": "date-time",
+      "title": "结束日期"
+    },
+    "duration_minutes": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "title": "时长分钟"
+    },
+    "priority": { "type": "integer", "minimum": 1, "maximum": 5, "default": 3 },
+    "required_people": { "type": "array", "items": { "type": "string" } },
+    "origin": { "type": "string", "title": "起点" },
+    "destination": { "type": "string", "title": "终点" },
+    "return_deadline": {
+      "type": "string",
+      "format": "date-time",
+      "title": "返程截止"
+    },
+    "can_move_existing": { "type": "boolean", "default": false }
+  }
+}

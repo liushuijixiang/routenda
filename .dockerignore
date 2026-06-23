@@ -1,0 +1,17 @@
+.git
+.env
+.env.local
+.env.*.local
+apps/api/.venv
+apps/api/.pytest_cache
+apps/api/.ruff_cache
+apps/api/.mypy_cache
+apps/web/.next
+apps/web/node_modules
+node_modules
+__pycache__
+*.pyc
+*.pyo
+*.log
+coverage
+dist

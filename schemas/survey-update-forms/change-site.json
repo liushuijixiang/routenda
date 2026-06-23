@@ -1,0 +1,1 @@
+{"title":"更换地点","pages":[{"elements":[{"type":"dropdown","name":"site_id","title":"现有厂区"},{"type":"text","name":"temporary_address","title":"临时地址"},{"type":"boolean","name":"requires_master_data_approval","title":"地址是否需要主数据审批"}]}]}

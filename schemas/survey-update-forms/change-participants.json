@@ -1,0 +1,1 @@
+{"title":"变更参与人","pages":[{"elements":[{"type":"tagbox","name":"required_roles","title":"必须角色"},{"type":"tagbox","name":"candidate_people","title":"候选人员"},{"type":"boolean","name":"allow_substitute","title":"允许替代"}]}]}

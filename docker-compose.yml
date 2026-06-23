@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: visit_agent
+      POSTGRES_USER: visit_agent
+      POSTGRES_PASSWORD: visit_agent
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visit_agent -d visit_agent"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["1025:1025", "8025:8025"]
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      API_HOST: 0.0.0.0
+      WEB_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgresql+psycopg://visit_agent:visit_agent@postgres:5432/visit_agent
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      ERP_PROVIDER: ${ERP_PROVIDER:-mock}
+      ERP_EXCEL_PATH: ${ERP_EXCEL_PATH:-data/erpnext-suppliers.csv}
+      ERP_NEXT_BASE_URL: ${ERP_NEXT_BASE_URL:-}
+      ERP_NEXT_API_KEY: ${ERP_NEXT_API_KEY:-}
+      ERP_NEXT_API_SECRET: ${ERP_NEXT_API_SECRET:-}
+      CALENDAR_PROVIDER: ${CALENDAR_PROVIDER:-mock}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_BASE_URL: ${FEISHU_BASE_URL:-https://open.feishu.cn/open-apis}
+      FEISHU_CALENDAR_ID: ${FEISHU_CALENDAR_ID:-primary}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-disabled}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      SERPER_URL: ${SERPER_URL:-https://google.serper.dev/search}
+      ROUTING_PROVIDER: ${ROUTING_PROVIDER:-mock}
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-http://localhost:5000}
+      GEOCODING_PROVIDER: ${GEOCODING_PROVIDER:-mock}
+      NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
+      NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-routenda-demo}
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["uv", "run", "python", "-m", "visit_agent.application.outbox_worker"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://visit_agent:visit_agent@postgres:5432/visit_agent
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: visit-agent@example.test
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-mini}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      ERP_PROVIDER: ${ERP_PROVIDER:-mock}
+      ERP_EXCEL_PATH: ${ERP_EXCEL_PATH:-data/erpnext-suppliers.csv}
+      ERP_NEXT_BASE_URL: ${ERP_NEXT_BASE_URL:-}
+      ERP_NEXT_API_KEY: ${ERP_NEXT_API_KEY:-}
+      ERP_NEXT_API_SECRET: ${ERP_NEXT_API_SECRET:-}
+      CALENDAR_PROVIDER: ${CALENDAR_PROVIDER:-mock}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_BASE_URL: ${FEISHU_BASE_URL:-https://open.feishu.cn/open-apis}
+      FEISHU_CALENDAR_ID: ${FEISHU_CALENDAR_ID:-primary}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-disabled}
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+      SERPER_URL: ${SERPER_URL:-https://google.serper.dev/search}
+      ROUTING_PROVIDER: ${ROUTING_PROVIDER:-mock}
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-http://localhost:5000}
+      GEOCODING_PROVIDER: ${GEOCODING_PROVIDER:-mock}
+      NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}
+      NOMINATIM_USER_AGENT: ${NOMINATIM_USER_AGENT:-routenda-demo}
+      REMINDER_FIRST_SEND_DELAY_MINUTES: 0
+      REMINDER_INTERVAL_HOURS: 24
+      REMINDER_MAX_COUNT: 2
+      REMINDER_QUIET_START: "20:00"
+      REMINDER_QUIET_END: "08:00"
+      REMINDER_TIMEZONE: Asia/Shanghai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      API_INTERNAL_BASE_URL: http://api:8000
+    ports: ["3000:3000"]
+    depends_on:
+      api:
+        condition: service_started

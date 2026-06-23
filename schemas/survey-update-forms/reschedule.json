@@ -1,0 +1,1 @@
+{"title":"改期","pages":[{"elements":[{"type":"comment","name":"reason","title":"原因"},{"type":"text","name":"acceptable_time","title":"可接受新时间"},{"type":"boolean","name":"allow_affect_later","title":"允许影响后续行程"}]}]}

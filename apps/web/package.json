@@ -1,0 +1,36 @@
+{
+  "name": "routenda-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm typecheck && prettier --check \"app/**/*.{ts,tsx,css}\" \"components/**/*.{js,jsx}\" \"lib/**/*.{js,ts}\" \"tests/**/*.{js,ts}\" \"*.{json,ts}\"",
+    "format": "prettier --write \"app/**/*.{ts,tsx,css}\" \"components/**/*.{js,jsx}\" \"lib/**/*.{js,ts}\" \"tests/**/*.{js,ts}\" \"*.{json,ts}\"",
+    "test:unit": "vitest run",
+    "test:smoke": "node tests/smoke.test.js",
+    "test:e2e": "playwright test",
+    "test": "pnpm test:unit && pnpm test:smoke && pnpm test:e2e"
+  },
+  "dependencies": {
+    "@rjsf/core": "latest",
+    "@rjsf/validator-ajv8": "latest",
+    "lucide-react": "^1.21.0",
+    "maplibre-gl": "latest",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "survey-core": "latest",
+    "survey-react-ui": "latest"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/node": "26.0.0",
+    "@types/react": "19.2.17",
+    "prettier": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
