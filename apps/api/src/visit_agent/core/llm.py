@@ -42,7 +42,7 @@ class OpenAICompatibleLLM:
             else f"{self.base_url}/chat/completions"
         )
         self.model = model
-        self.client = client or httpx.AsyncClient(timeout=20.0, trust_env=False)
+        self.client = client
         self._owns_client = client is None
 
     async def generate(
@@ -66,7 +66,20 @@ class OpenAICompatibleLLM:
         }
         if tools:
             payload["tools"] = tools
-        response = await self.client.post(
+        if self.client is None:
+            async with httpx.AsyncClient(timeout=20.0, trust_env=False) as client:
+                response = await self._post(client, payload)
+        else:
+            response = await self._post(self.client, payload)
+        if response.status_code >= 400:
+            raise LLMError(f"LLM HTTP {response.status_code}: {response.text[:300]}")
+        content = self._content(response.json()).strip()
+        if not content:
+            raise LLMError("LLM returned empty content")
+        return content
+
+    async def _post(self, client: httpx.AsyncClient, payload: dict[str, Any]) -> httpx.Response:
+        return await client.post(
             self.chat_completions_url,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
@@ -74,12 +87,6 @@ class OpenAICompatibleLLM:
             },
             json=payload,
         )
-        if response.status_code >= 400:
-            raise LLMError(f"LLM HTTP {response.status_code}: {response.text[:300]}")
-        content = self._content(response.json()).strip()
-        if not content:
-            raise LLMError("LLM returned empty content")
-        return content
 
     @staticmethod
     def _content(payload: dict[str, Any]) -> str:
@@ -95,7 +102,7 @@ class OpenAICompatibleLLM:
         return str(content)
 
     async def aclose(self) -> None:
-        if self._owns_client:
+        if not self._owns_client and self.client is not None:
             await self.client.aclose()
 
 
