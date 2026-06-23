@@ -22,6 +22,7 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
         self.engine = create_engine(database_url)
 
         if database_url.startswith("sqlite"):
+
             def enable_sqlite_foreign_keys(
                 dbapi_connection: Any,
                 _connection_record: Any,
@@ -70,15 +71,24 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
 
             self._add_and_flush(
                 session,
-                (legacy.SupplierRow(**legacy.supplier_to_row(item)) for item in self.suppliers.values()),
+                (
+                    legacy.SupplierRow(**legacy.supplier_to_row(item))
+                    for item in self.suppliers.values()
+                ),
             )
             self._add_and_flush(
                 session,
-                (legacy.SupplierSiteRow(**legacy.site_to_row(item)) for item in self.sites.values()),
+                (
+                    legacy.SupplierSiteRow(**legacy.site_to_row(item))
+                    for item in self.sites.values()
+                ),
             )
             self._add_and_flush(
                 session,
-                (legacy.ContactRow(**legacy.contact_to_row(item)) for item in self.contacts.values()),
+                (
+                    legacy.ContactRow(**legacy.contact_to_row(item))
+                    for item in self.contacts.values()
+                ),
             )
             self._add_and_flush(
                 session,
@@ -209,12 +219,17 @@ class OrderedSQLAlchemyRepository(legacy.SQLAlchemyRepository):
             )
             self._add_and_flush(
                 session,
-                (legacy.MessageRow(**legacy.message_to_row(item)) for item in self.messages.values()),
+                (
+                    legacy.MessageRow(**legacy.message_to_row(item))
+                    for item in self.messages.values()
+                ),
             )
             self._add_and_flush(
                 session,
                 (
-                    legacy.MasterDataChangeRequestRow(**legacy.master_data_change_to_row(item))
+                    legacy.MasterDataChangeRequestRow(
+                        **legacy.master_data_change_to_row(item)
+                    )
                     for item in self.master_data_changes.values()
                 ),
             )
