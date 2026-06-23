@@ -12,6 +12,7 @@ from typing import Any
 
 from visit_agent.agent.runtime import AgentRuntime
 from visit_agent.config import settings
+from visit_agent.core.message import Message
 from visit_agent.infrastructure.adapters.feishu import FeishuOpenPlatformAdapter
 
 
@@ -175,6 +176,7 @@ class FeishuAgentEventHandler:
         self.runtime = runtime
         self.send_text = send_text or self._send_text
         self._seen_message_ids: set[str] = set()
+        self._histories: dict[str, list[Message]] = {}
         self._lock = threading.Lock()
 
     def handle(self, event: Any) -> None:
@@ -199,7 +201,15 @@ class FeishuAgentEventHandler:
         if message.message_type != "text":
             self.send_text(message.chat_id, "当前版本暂时只支持文本消息。")
             return
-        turn = run_async(self.runtime.run(message.text))
+        history = self._conversation(message.chat_id, message.text)
+        turn = run_async(self.runtime.run_messages(history))
+        self._remember(message.chat_id, message.text, turn.reply)
+        logger.info(
+            "agent_reply_ready message_id=%s tool_calls=%s reply_preview=%s",
+            message.message_id,
+            [call.name for call in turn.tool_calls],
+            turn.reply[:120].replace("\n", " "),
+        )
         self.send_text(message.chat_id, turn.reply)
 
     def _claim(self, message_id: str) -> bool:
@@ -208,6 +218,17 @@ class FeishuAgentEventHandler:
                 return False
             self._seen_message_ids.add(message_id)
             return True
+
+    def _conversation(self, chat_id: str, text: str) -> list[Message]:
+        with self._lock:
+            history = list(self._histories.get(chat_id, []))
+        return [*history[-10:], Message("user", text)]
+
+    def _remember(self, chat_id: str, text: str, reply: str) -> None:
+        with self._lock:
+            history = self._histories.setdefault(chat_id, [])
+            history.extend([Message("user", text), Message("assistant", reply)])
+            del history[:-12]
 
     @staticmethod
     def _send_text(chat_id: str, text: str) -> None:

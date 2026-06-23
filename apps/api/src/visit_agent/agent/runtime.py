@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -8,6 +9,7 @@ from visit_agent.agents.react_agent import ReactAgent
 from visit_agent.config import settings
 from visit_agent.core.config import AgentConfig
 from visit_agent.core.llm import FallbackLLM, LLM, OpenAICompatibleLLM, ResilientLLM
+from visit_agent.core.message import Message
 from visit_agent.infrastructure.adapters.feishu import (
     FeishuOpenPlatformAdapter,
     format_calendar_summary,
@@ -62,12 +64,25 @@ class AgentRuntime:
         if not text.strip():
             return AgentTurn(text=text, reply="我收到了消息，但暂时只能处理文本。")
         response = await self.agent.run(text)
+        return self._turn(text, response.content, response.tool_calls)
+
+    async def run_messages(self, messages: Sequence[Message]) -> AgentTurn:
+        text = next((message.content for message in reversed(messages) if message.role == "user"), "")
+        if not text.strip():
+            return AgentTurn(text=text, reply="我收到了消息，但暂时只能处理文本。")
+        if not any(message.role == "system" for message in messages):
+            messages = [Message("system", self.agent.config.system_prompt), *messages]
+        response = await self.agent.run(messages)
+        return self._turn(text, response.content, response.tool_calls)
+
+    @staticmethod
+    def _turn(text: str, reply: str, tool_calls: Sequence[Any]) -> AgentTurn:
         return AgentTurn(
             text=text,
-            reply=response.content,
+            reply=reply,
             tool_calls=[
                 AgentToolCall(call.name, call.ok, call.output, call.raw)
-                for call in response.tool_calls
+                for call in tool_calls
             ],
         )
 

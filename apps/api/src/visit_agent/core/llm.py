@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import logging
 from typing import Any, Protocol
 
 import httpx
@@ -8,6 +9,9 @@ import httpx
 from visit_agent.core.config import AgentConfig
 from visit_agent.core.exceptions import LLMError
 from visit_agent.core.message import Message
+
+
+logger = logging.getLogger(__name__)
 
 
 class LLM(Protocol):
@@ -72,7 +76,10 @@ class OpenAICompatibleLLM:
         )
         if response.status_code >= 400:
             raise LLMError(f"LLM HTTP {response.status_code}: {response.text[:300]}")
-        return self._content(response.json()).strip()
+        content = self._content(response.json()).strip()
+        if not content:
+            raise LLMError("LLM returned empty content")
+        return content
 
     @staticmethod
     def _content(payload: dict[str, Any]) -> str:
@@ -103,15 +110,18 @@ class FallbackLLM:
         last_user = next((item.content for item in reversed(messages) if item.role == "user"), "")
         tool_context = [item.content for item in messages if item.role == "tool"]
         if tool_context:
-            return "我是 Routenda Agent，已经调用工具处理了你的消息：\n" + "\n".join(
-                tool_context
+            return (
+                "我查到这些结果，先按可执行信息整理给你：\n"
+                + "\n".join(tool_context)
+                + "\n\n你可以继续补充时间、地点、参与人或约束，我会接着推进安排。"
             )
         if not last_user.strip():
             return "我在。你可以直接告诉我拜访对象、时间、地点或要查询的问题。"
+        if len(last_user.strip()) <= 6:
+            return "我在。你想安排拜访、查日历，还是让我帮你规划一段行程？"
         return (
-            "我是 Routenda Agent。我可以先和你确认需求，也可以调用供应商、日历、搜索、"
-            "路线规划等工具继续分析。你刚才说："
-            f"{last_user.strip()}"
+            "我可以处理这个。为了推进安排，请补充：拜访对象、地点、日期时间、预计时长、"
+            "参与人，以及是否有必须出发或返回的时间。"
         )
 
 
@@ -133,4 +143,5 @@ class ResilientLLM:
             return await self.primary.generate(messages, tools=tools, config=config)
         except Exception as exc:  # noqa: BLE001 - fallback keeps chat usable
             self.last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("llm_fallback error=%s", self.last_error)
             return await self.fallback.generate(messages, tools=tools, config=config)

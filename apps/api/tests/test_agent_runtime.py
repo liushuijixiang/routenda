@@ -32,8 +32,8 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertIn("extract_visit_requirement", tool_names)
         self.assertIn("search_suppliers", tool_names)
         self.assertIn("generate_itinerary_plan", tool_names)
-        self.assertIn("Routenda Agent", turn.reply)
         self.assertIn("search_suppliers", turn.reply)
+        self.assertIn("苏州安科", turn.reply)
 
     def test_calendar_message_calls_calendar_tool(self) -> None:
         runtime = AgentRuntime(
@@ -47,12 +47,23 @@ class AgentRuntimeTests(unittest.TestCase):
         self.assertEqual(tool_names, ["extract_visit_requirement", "feishu_calendar"])
         self.assertIn("飞书凭据未配置", turn.reply)
 
+    def test_short_chat_has_non_template_response(self) -> None:
+        runtime = AgentRuntime(
+            VisitCoordinatorAgent(seed_demo(InMemoryRepository())),
+            llm=FallbackLLM(),
+        )
+
+        turn = asyncio.run(runtime.run("你好"))
+
+        self.assertIn("我在", turn.reply)
+        self.assertNotIn("你刚才说", turn.reply)
+
     def test_simple_agent_handles_plain_chat(self) -> None:
         agent = SimpleAgent(FallbackLLM())
 
         response = asyncio.run(agent.run("你好"))
 
-        self.assertIn("Routenda Agent", response.content)
+        self.assertIn("我在", response.content)
         self.assertEqual(response.tool_calls, [])
 
     def test_react_agent_can_call_builtin_tool(self) -> None:
@@ -93,6 +104,20 @@ class FeishuAgentEventTests(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0][0], "chat-1")
         self.assertIn("feishu_calendar", sent[0][1])
+
+    def test_handler_keeps_conversation_history(self) -> None:
+        runtime = AgentRuntime(
+            VisitCoordinatorAgent(seed_demo(InMemoryRepository())),
+            llm=FallbackLLM(),
+        )
+        sent: list[tuple[str, str]] = []
+        handler = FeishuAgentEventHandler(runtime, send_text=lambda chat_id, text: sent.append((chat_id, text)))
+
+        handler.handle(_feishu_event("msg-1", "chat-1", "你好"))
+        handler.handle(_feishu_event("msg-2", "chat-1", "继续"))
+
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(len(handler._histories["chat-1"]), 4)
 
     def test_event_queue_runs_submitted_events(self) -> None:
         seen: list[str] = []
